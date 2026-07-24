@@ -12,8 +12,14 @@ and scrolls the script as you speak — no pedals, no manual scrolling.
 That serves the app at http://localhost:8400 and opens Chrome. The first time
 you hit **Listen**, Chrome will ask for microphone access — allow it.
 
-> Voice mode uses the browser's Web Speech API, so use **Chrome** (best) or
-> Safari. It needs an internet connection in Chrome.
+> Voice mode uses the browser's Web Speech API in **Chrome** or Safari.
+> On modern Chrome it prefers the **on-device** engine: the first time you hit
+> Listen, Chrome may download its English speech model (one-time, then voice
+> mode works fully offline). Chrome's old cloud engine is being retired and
+> often fails with a `network` error even when you're online — that's why
+> on-device is the default here. If the status pill says "speech engine
+> unreachable", update Chrome (150+) or use Safari, whose dictation engine
+> also runs on-device.
 
 ## Using it
 

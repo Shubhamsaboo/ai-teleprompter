@@ -235,18 +235,79 @@ function updateProgress() {
 }
 
 // ---------------------------------------------------------------- speech
+// Chrome is retiring the cloud backend behind webkitSpeechRecognition (its
+// "network" error even when online). Prefer the on-device engine
+// (processLocally, Chrome 139+): check availability, install the language
+// pack once if needed, and only fall back to the cloud path if on-device
+// isn't supported.
+const LANG = "en-US";
+let useLocal = null; // null = undecided, true = on-device, false = cloud
+let netErrors = 0;
+
+function getSR() {
+  return window.SpeechRecognition || window.webkitSpeechRecognition;
+}
+
+function withTimeout(promise, ms, fallback) {
+  return Promise.race([
+    promise,
+    new Promise((r) => setTimeout(() => r(fallback), ms)),
+  ]);
+}
+
+async function localAvailability() {
+  const SR = getSR();
+  if (!SR || typeof SR.available !== "function") return "unsupported";
+  try {
+    // never let a stalled engine probe hang the UI — fall back to cloud
+    return await withTimeout(
+      SR.available({ langs: [LANG], processLocally: true }),
+      4000,
+      "unsupported"
+    );
+  } catch (_) {
+    return "unsupported";
+  }
+}
+
+async function ensureLocalModel() {
+  const SR = getSR();
+  let state = await localAvailability();
+  if (state === "available") return true;
+  if (state === "downloadable" || state === "downloading") {
+    setStatus("downloading speech model…", "live");
+    try {
+      // one-time language-pack download; generous bound, then give up
+      await withTimeout(
+        SR.install({ langs: [LANG], processLocally: true }),
+        120000,
+        false
+      );
+    } catch (_) {
+      return false;
+    }
+    state = await localAvailability();
+    return state === "available";
+  }
+  return false;
+}
+
 function buildRecognition() {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const SR = getSR();
   if (!SR) return null;
   const rec = new SR();
   rec.continuous = true;
   rec.interimResults = true;
-  rec.lang = "en-US";
+  rec.lang = LANG;
+  if (useLocal && "processLocally" in rec) rec.processLocally = true;
 
   let utterIndex = 0;
   let consumed = 0;
 
   rec.onresult = (e) => {
+    netErrors = 0;
+    if (statusPill.classList.contains("err"))
+      setStatus(useLocal ? "listening (on-device)" : "listening", "live");
     for (let i = e.resultIndex; i < e.results.length; i++) {
       if (i < utterIndex) continue;
       const res = e.results[i];
@@ -260,8 +321,16 @@ function buildRecognition() {
 
   rec.onerror = (e) => {
     if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-      setStatus("mic blocked", "err");
+      setStatus("mic blocked — allow in site settings", "err");
       stopListening();
+    } else if (e.error === "network") {
+      netErrors++;
+      if (netErrors >= 3) {
+        setStatus("speech engine unreachable — try Safari", "err");
+        stopListening();
+      } else {
+        setStatus("speech engine hiccup — retrying", "err");
+      }
     } else if (e.error !== "no-speech" && e.error !== "aborted") {
       setStatus(e.error, "err");
     }
@@ -269,7 +338,8 @@ function buildRecognition() {
 
   rec.onend = () => {
     // Chrome stops after silence — restart while we're meant to be live
-    if (listening) {
+    // (unless we just gave up after repeated engine failures)
+    if (listening && netErrors < 3) {
       try { rec.start(); } catch (_) {}
     }
   };
@@ -277,17 +347,23 @@ function buildRecognition() {
   return rec;
 }
 
-function startListening() {
-  if (!recognition) recognition = buildRecognition();
-  if (!recognition) {
+async function startListening() {
+  if (!getSR()) {
     setStatus("speech API unavailable — use Chrome/Safari", "err");
     return;
   }
-  try { recognition.start(); } catch (_) {}
-  listening = true;
   micBtn.classList.add("live");
   micLabel.textContent = "Stop";
-  setStatus("listening", "live");
+  if (useLocal == null) {
+    setStatus("checking speech engine…", "live");
+    useLocal = await ensureLocalModel();
+    recognition = null; // rebuild with the decided engine
+  }
+  if (!recognition) recognition = buildRecognition();
+  netErrors = 0;
+  listening = true;
+  try { recognition.start(); } catch (_) {}
+  setStatus(useLocal ? "listening (on-device)" : "listening", "live");
   startTimer();
 }
 
