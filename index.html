@@ -92,7 +92,11 @@
     </label>
     <label class="sp-radio">
       <input type="radio" name="engine" value="gemini" />
-      <span><b>Gemini Live</b> — streaming transcription, most accurate</span>
+      <span><b>Gemini Live</b> — most accurate, but transcripts lag ~1–2s</span>
+    </label>
+    <label class="sp-radio">
+      <input type="radio" name="engine" value="hybrid" />
+      <span><b>Hybrid</b> — browser speed + Gemini accuracy (recommended)</span>
     </label>
     <div class="sp-key" id="sp-key-row">
       <input type="password" id="gemini-key" placeholder="Gemini API key" autocomplete="off" />
@@ -106,6 +110,6 @@
 
   <div class="hint" id="hint">Space — listen · ↑↓ — jump paragraph · F — fullscreen · M — mirror · R — restart</div>
 
-  <script src="app.js?v=6"></script>
+  <script src="app.js?v=7"></script>
 </body>
 </html>

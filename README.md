@@ -46,10 +46,16 @@ you hit **Listen**, Chrome will ask for microphone access — allow it.
 
 ### Speech engines (⚙ in the dock)
 
-| Engine | Accuracy | Setup |
-|--------|----------|-------|
-| **Browser** (default) | good | none — Chrome's on-device model or Safari dictation |
-| **Gemini Live** | best | paste your API key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
+| Engine | Latency | Accuracy | Setup |
+|--------|---------|----------|-------|
+| **Browser** (default) | instant | good | none — Chrome's on-device model or Safari dictation |
+| **Gemini Live** | ~1–2 s | best | Gemini API key |
+| **Hybrid** (recommended with a key) | instant | best | Gemini API key |
+
+Hybrid runs both at once: the browser engine drives the scroll word-by-word,
+while Gemini's slower-but-smarter transcript runs a shadow tracker that
+corrects the position whenever the fast engine stalls or drifts. If Gemini
+drops mid-session, it degrades to browser-only without stopping.
 
 Gemini Live streams your mic audio over WebSocket to
 `gemini-3.1-flash-live-preview` and feeds its transcription to the same

@@ -23,7 +23,16 @@ const speedInput = document.getElementById("speed");
 
 // ---------------------------------------------------------------- state
 let words = [];          // [{norm, el}] spoken-matchable words in order
-let pos = 0;             // index of next expected word
+
+// A tracker follows a position in the script. T (primary) drives the display.
+// In hybrid mode Gemini runs a second, DOM-less "shadow" tracker whose more
+// accurate (but slower) position corrects T when they diverge.
+function makeTracker() {
+  return { pos: 0, recent: [], missStreak: 0, lastAdvance: 0 };
+}
+let T = makeTracker();
+let shadow = null;
+let diverge = 0;
 let mode = "voice";      // voice | auto | manual
 let listening = false;
 let autoRunning = false;
@@ -120,7 +129,8 @@ function makeCue(text) {
 
 function parseScript(md, name) {
   words = [];
-  pos = 0;
+  T = makeTracker();
+  shadow = null;
   scriptEl.innerHTML = "";
   let title = name || "Script";
 
@@ -224,47 +234,60 @@ function lev1(a, b) {
   return edits + (a.length - i) + (b.length - j) <= 1;
 }
 
-// ring buffer of the last words actually heard (matched or not) — the probe
-// used to re-locate when local tracking stalls
-let recent = [];
-let missStreak = 0;
+// advance the display: mark skipped words spoken, highlight the new current
+function applyAdvance(from, hit) {
+  for (let j = from; j <= hit; j++) words[j].el.classList.add("spoken");
+  words[hit].el.classList.remove("spoken");
+  setCurrent(hit);
+}
 
-function matchTokens(rawTokens) {
+// hard-jump the display to an arbitrary word index (relocation / correction)
+function jumpDisplayTo(idx) {
+  words.forEach((w, i) => {
+    w.el.classList.toggle("spoken", i < idx);
+    if (w.el !== words[idx].el) w.el.classList.remove("current");
+  });
+  currentEl = null;
+  setCurrent(idx);
+}
+
+function matchCore(tr, rawTokens, apply) {
   const tokens = normalizeTokens(rawTokens);
   let advanced = false;
   for (const norm of tokens) {
-    recent.push(norm);
-    if (recent.length > 10) recent.shift();
-    const end = Math.min(pos + LOOKAHEAD, words.length);
+    tr.recent.push(norm);
+    if (tr.recent.length > 10) tr.recent.shift();
+    const end = Math.min(tr.pos + LOOKAHEAD, words.length);
     let hit = -1;
-    for (let i = pos; i < end; i++) {
+    for (let i = tr.pos; i < end; i++) {
       if (close(norm, words[i].norm)) { hit = i; break; }
     }
     if (hit >= 0) {
-      for (let j = pos; j <= hit; j++) words[j].el.classList.add("spoken");
-      words[hit].el.classList.remove("spoken");
-      setCurrent(hit);
-      pos = hit + 1;
+      if (apply) applyAdvance(tr.pos, hit);
+      tr.pos = hit + 1;
+      tr.missStreak = 0;
+      tr.lastAdvance = performance.now();
       advanced = true;
-      missStreak = 0;
     } else {
-      missStreak++;
+      tr.missStreak++;
     }
   }
   // local tracking lost — search the whole script for where the speaker
   // actually is (handles big skips, jump-backs, ad-libbed detours)
-  if (missStreak >= 6 && recent.length >= 6 && relocate()) advanced = true;
-  if (advanced) {
+  if (tr.missStreak >= 6 && tr.recent.length >= 6 && relocateCore(tr, apply))
+    advanced = true;
+  if (advanced && apply) {
     followCurrent();
     updateProgress();
   }
+  return advanced;
 }
 
 // Find the best in-order alignment of the last ~8 heard words anywhere in the
 // script. Only jump on a confident match; slight preference for positions
 // near the current one so repeated phrases don't teleport us.
-function relocate() {
-  const probe = recent.slice(-8);
+function relocateCore(tr, apply) {
+  const probe = tr.recent.slice(-8);
   const need = Math.max(5, Math.ceil(probe.length * 0.65));
   let best = null;
   for (let s = 0; s < words.length; s++) {
@@ -279,20 +302,55 @@ function relocate() {
       }
     }
     if (score < need) continue;
-    const eff = score - Math.min(1.5, Math.abs(last - pos) / 800);
+    const eff = score - Math.min(1.5, Math.abs(last - tr.pos) / 800);
     if (!best || eff > best.eff) best = { eff, score, last };
   }
   if (!best) return false;
-  const idx = best.last;
-  words.forEach((w, i) => {
-    w.el.classList.toggle("spoken", i < idx);
-    if (w.el !== words[idx].el) w.el.classList.remove("current");
-  });
-  currentEl = null;
-  setCurrent(idx);
-  pos = idx + 1;
-  missStreak = 0;
+  if (apply) jumpDisplayTo(best.last);
+  tr.pos = best.last + 1;
+  tr.missStreak = 0;
+  tr.lastAdvance = performance.now();
   return true;
+}
+
+// primary entry — browser engine, sim, and gemini-only mode land here
+function matchTokens(rawTokens) {
+  matchCore(T, rawTokens, true);
+}
+
+// Gemini's transcript: in hybrid mode it feeds the shadow tracker and only
+// corrects the display when the fast tracker is stalled or clearly lost.
+// Gemini lags speech by a second or two, so the shadow normally trails the
+// primary a little — thresholds are asymmetric to account for that.
+function geminiTokens(tokens) {
+  if (settings.engine !== "hybrid") {
+    matchTokens(tokens);
+    return;
+  }
+  if (!shadow) { shadow = makeTracker(); shadow.pos = T.pos; }
+  matchCore(shadow, tokens, false);
+  const ahead = shadow.pos - T.pos; // >0: primary is stuck behind reality
+  const stalled = performance.now() - T.lastAdvance > 2500;
+  const lost = (ahead > 8 && (stalled || ++diverge >= 2)) ||
+               (ahead < -15 && ++diverge >= 3);
+  if (!lost) {
+    if (Math.abs(ahead) <= 8) diverge = 0;
+    return;
+  }
+  jumpDisplayTo(Math.max(0, shadow.pos - 1));
+  T.pos = shadow.pos;
+  T.recent = shadow.recent.slice();
+  T.missStreak = 0;
+  T.lastAdvance = performance.now();
+  diverge = 0;
+  followCurrent();
+  updateProgress();
+}
+
+// keep the shadow aligned after manual jumps so it doesn't "correct" us back
+function syncShadow() {
+  if (shadow) { shadow = makeTracker(); shadow.pos = T.pos; }
+  diverge = 0;
 }
 
 let currentEl = null;
@@ -313,7 +371,7 @@ function followCurrent() {
 }
 
 function updateProgress() {
-  const p = words.length ? Math.round((pos / words.length) * 100) : 0;
+  const p = words.length ? Math.round((T.pos / words.length) * 100) : 0;
   progressEl.style.width = p + "%";
   pctEl.textContent = p + "%";
 }
@@ -438,6 +496,13 @@ const settings = {
   engine: localStorage.getItem("tp-engine") || "browser",
   geminiKey: localStorage.getItem("tp-gemini-key") || "",
 };
+// one-time migration: plain Gemini lags ~1-2s behind speech; hybrid keeps its
+// accuracy but lets the instant browser engine drive the scroll
+if (settings.engine === "gemini" && !localStorage.getItem("tp-hybrid-migrated")) {
+  settings.engine = "hybrid";
+  localStorage.setItem("tp-engine", "hybrid");
+  localStorage.setItem("tp-hybrid-migrated", "1");
+}
 const GEMINI_API = "https://generativelanguage.googleapis.com/v1beta";
 const GEMINI_WS =
   "wss://generativelanguage.googleapis.com/ws/" +
@@ -570,7 +635,16 @@ const geminiEngine = {
       if (t) this.onText(t);
     };
     ws.onclose = (e) => {
-      if (!listening || settings.engine !== "gemini") return;
+      if (!listening || (settings.engine !== "gemini" && settings.engine !== "hybrid"))
+        return;
+      // in hybrid mode the browser engine keeps the show running — degrade
+      // gracefully instead of stopping everything
+      if (settings.engine === "hybrid" && recognition && this.gotSetup) {
+        console.warn("gemini dropped in hybrid mode", e.code, e.reason);
+        shadow = null;
+        setStatus("hybrid: Gemini dropped — browser only", "live");
+        return;
+      }
       const reason = e.reason || this.lastError || "";
       console.warn("gemini closed", e.code, reason);
       // setup was rejected — adapt and retry instead of guessing at the cause:
@@ -589,6 +663,12 @@ const geminiEngine = {
         }
         this.cleanup();
         this.start(true).then((ok) => { if (!ok) stopListening(); });
+        return;
+      }
+      if (settings.engine === "hybrid" && recognition) {
+        console.warn("gemini unavailable in hybrid mode:", e.code, reason);
+        shadow = null;
+        setStatus("hybrid: Gemini failed — browser only", "live");
         return;
       }
       setStatus(
@@ -629,13 +709,13 @@ const geminiEngine = {
     this.textBuf += t;
     const parts = this.textBuf.split(/\s+/);
     this.textBuf = parts.pop() || "";
-    if (parts.length) matchTokens(parts);
+    if (parts.length) geminiTokens(parts);
     clearTimeout(this.flushTimer);
     this.flushTimer = setTimeout(() => this.flush(), 800);
   },
   flush() {
     if (this.textBuf) {
-      matchTokens([this.textBuf]);
+      geminiTokens([this.textBuf]);
       this.textBuf = "";
     }
   },
@@ -677,6 +757,19 @@ function b64FromInt16(pcm) {
   return btoa(bin);
 }
 
+async function startBrowserEngine() {
+  if (!getSR()) return false;
+  if (useLocal == null) {
+    setStatus("checking speech engine…", "live");
+    useLocal = await ensureLocalModel();
+    recognition = null; // rebuild with the decided engine
+  }
+  if (!recognition) recognition = buildRecognition();
+  netErrors = 0;
+  try { recognition.start(); } catch (_) {}
+  return true;
+}
+
 async function startListening() {
   micBtn.classList.add("live");
   micLabel.textContent = "Stop";
@@ -684,20 +777,27 @@ async function startListening() {
   if (settings.engine === "gemini") {
     const ok = await geminiEngine.start();
     if (!ok) { stopListening(); return; }
+  } else if (settings.engine === "hybrid") {
+    // browser engine gives instant tracking; Gemini shadow-corrects it
+    shadow = makeTracker();
+    shadow.pos = T.pos;
+    diverge = 0;
+    const b = await startBrowserEngine();
+    const g = await geminiEngine.start();
+    if (!b && !g) { stopListening(); return; }
+    setStatus(
+      b && g ? "listening (hybrid)"
+        : b ? "hybrid: Gemini failed — browser only"
+        : "listening (Gemini only)",
+      "live"
+    );
   } else {
-    if (!getSR()) {
+    const b = await startBrowserEngine();
+    if (!b) {
       setStatus("speech API unavailable — use Chrome/Safari", "err");
       stopListening();
       return;
     }
-    if (useLocal == null) {
-      setStatus("checking speech engine…", "live");
-      useLocal = await ensureLocalModel();
-      recognition = null; // rebuild with the decided engine
-    }
-    if (!recognition) recognition = buildRecognition();
-    netErrors = 0;
-    try { recognition.start(); } catch (_) {}
     setStatus(useLocal ? "listening (on-device)" : "listening", "live");
   }
   startTimer();
@@ -808,7 +908,8 @@ function toggleMirror() {
 
 document.getElementById("top-btn").addEventListener("click", restart);
 function restart() {
-  pos = 0;
+  T = makeTracker();
+  syncShadow();
   targetScroll = null;
   currentEl = null;
   words.forEach((w) => w.el.classList.remove("spoken", "current"));
@@ -875,7 +976,10 @@ function jumpParagraph(dir) {
   });
   currentEl = null;
   setCurrent(wi);
-  pos = wi + 1;
+  T.pos = wi + 1;
+  T.recent = [];
+  T.missStreak = 0;
+  syncShadow();
   followCurrent();
   updateProgress();
   if (mode !== "voice") {
@@ -987,11 +1091,11 @@ if (new URLSearchParams(location.search).has("sim")) {
     if (simOn) feed();
   });
   function feed() {
-    if (!simOn || pos >= words.length) return;
+    if (!simOn || T.pos >= words.length) return;
     // speak 2–4 words ahead, occasionally skipping one (tests fuzziness)
     const n = 2 + Math.floor(Math.random() * 3);
     const toks = [];
-    for (let i = pos, c = 0; i < words.length && c < n; i++, c++) {
+    for (let i = T.pos, c = 0; i < words.length && c < n; i++, c++) {
       if (Math.random() < 0.12) continue; // skipped word
       toks.push(words[i].norm);
     }
