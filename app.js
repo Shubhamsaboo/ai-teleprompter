@@ -438,10 +438,7 @@ const settings = {
   engine: localStorage.getItem("tp-engine") || "browser",
   geminiKey: localStorage.getItem("tp-gemini-key") || "",
 };
-const GEMINI_MODELS = [
-  "models/gemini-3.1-flash-live-preview",
-  "models/gemini-2.5-flash-live-preview",
-];
+const GEMINI_API = "https://generativelanguage.googleapis.com/v1beta";
 const GEMINI_WS =
   "wss://generativelanguage.googleapis.com/ws/" +
   "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
@@ -449,8 +446,55 @@ const GEMINI_WS =
 const geminiEngine = {
   ws: null, ctx: null, stream: null, node: null, src: null,
   textBuf: "", flushTimer: null,
-  model: GEMINI_MODELS[0], modalities: ["TEXT"],
+  model: "", modalities: ["TEXT"],
   gotSetup: false, attempts: 0, lastError: "",
+
+  // Ask the account which models actually support the Live API
+  // (bidiGenerateContent) instead of hardcoding names Google keeps churning.
+  async discoverModel() {
+    try {
+      const names = [];
+      let pageToken = "";
+      for (let i = 0; i < 3; i++) {
+        const r = await fetch(
+          GEMINI_API + "/models?pageSize=200&key=" +
+            encodeURIComponent(settings.geminiKey) +
+            (pageToken ? "&pageToken=" + pageToken : "")
+        );
+        if (!r.ok) {
+          this.lastError = "model list failed: HTTP " + r.status;
+          return null;
+        }
+        const j = await r.json();
+        for (const m of j.models || [])
+          if ((m.supportedGenerationMethods || []).includes("bidiGenerateContent"))
+            names.push(m.name);
+        pageToken = j.nextPageToken;
+        if (!pageToken) break;
+      }
+      if (!names.length) {
+        this.lastError = "no Live API models available on this key";
+        return null;
+      }
+      const rank = (n) => {
+        let s = 0;
+        if (n === "models/gemini-3.1-flash-live-preview") s += 1000; // user-preferred
+        if (/live/.test(n)) s += 100;
+        if (/flash/.test(n)) s += 5;
+        if (/translate|tts/.test(n)) s -= 500;
+        if (/exp/.test(n)) s -= 3;
+        const v = n.match(/(\d+)\.(\d+)/);
+        if (v) s += +v[1] * 10 + +v[2];
+        return s;
+      };
+      names.sort((a, b) => rank(b) - rank(a));
+      console.info("Live API models on this key (ranked):", names);
+      return names[0];
+    } catch (e) {
+      this.lastError = "model discovery failed: " + e.message;
+      return null;
+    }
+  },
 
   async start(isRetry) {
     if (!settings.geminiKey) {
@@ -458,9 +502,19 @@ const geminiEngine = {
       return false;
     }
     if (!isRetry) {
-      this.model = GEMINI_MODELS[0];
       this.modalities = ["TEXT"];
       this.attempts = 0;
+      this.model = localStorage.getItem("tp-gemini-model") || "";
+    }
+    if (!this.model) {
+      setStatus("finding a Live API model…", "live");
+      this.model = await this.discoverModel();
+      if (!this.model) {
+        setStatus("Gemini: " + (this.lastError || "no usable model"), "err");
+        return false;
+      }
+      localStorage.setItem("tp-gemini-model", this.model);
+      console.info("using Live API model:", this.model);
     }
     this.gotSetup = false;
     this.lastError = "";
@@ -524,8 +578,12 @@ const geminiEngine = {
       // problem (native-audio models refuse TEXT) and retry with AUDIO
       const fatal = /api key|permission|quota|billing|suspended/i.test(reason);
       if (!this.gotSetup && this.attempts < 3 && !fatal) {
-        if (/model/i.test(reason) && this.model !== GEMINI_MODELS[1]) {
-          this.model = GEMINI_MODELS[1];
+        if (/modalit/i.test(reason)) {
+          this.modalities = ["AUDIO"]; // native-audio setups refuse TEXT
+        } else if (/not found|not supported|unknown|invalid/i.test(reason)) {
+          // stale/wrong model name — rediscover from the account's real list
+          localStorage.removeItem("tp-gemini-model");
+          this.model = "";
         } else {
           this.modalities = ["AUDIO"];
         }
