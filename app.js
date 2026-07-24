@@ -438,7 +438,10 @@ const settings = {
   engine: localStorage.getItem("tp-engine") || "browser",
   geminiKey: localStorage.getItem("tp-gemini-key") || "",
 };
-const GEMINI_MODEL = "models/gemini-3.1-flash-live-preview";
+const GEMINI_MODELS = [
+  "models/gemini-3.1-flash-live-preview",
+  "models/gemini-2.5-flash-live-preview",
+];
 const GEMINI_WS =
   "wss://generativelanguage.googleapis.com/ws/" +
   "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
@@ -446,13 +449,23 @@ const GEMINI_WS =
 const geminiEngine = {
   ws: null, ctx: null, stream: null, node: null, src: null,
   textBuf: "", flushTimer: null,
+  model: GEMINI_MODELS[0], modalities: ["TEXT"],
+  gotSetup: false, attempts: 0, lastError: "",
 
-  async start() {
+  async start(isRetry) {
     if (!settings.geminiKey) {
       setStatus("add your Gemini API key in ⚙ settings", "err");
       return false;
     }
-    setStatus("connecting to Gemini…", "live");
+    if (!isRetry) {
+      this.model = GEMINI_MODELS[0];
+      this.modalities = ["TEXT"];
+      this.attempts = 0;
+    }
+    this.gotSetup = false;
+    this.lastError = "";
+    this.attempts++;
+    setStatus(isRetry ? "retrying Gemini…" : "connecting to Gemini…", "live");
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
@@ -476,8 +489,8 @@ const geminiEngine = {
     ws.send(
       JSON.stringify({
         setup: {
-          model: GEMINI_MODEL,
-          generationConfig: { responseModalities: ["TEXT"] },
+          model: this.model,
+          generationConfig: { responseModalities: this.modalities },
           systemInstruction: {
             parts: [{ text: "You are a silent transcription service. Never reply to the audio." }],
           },
@@ -489,21 +502,46 @@ const geminiEngine = {
       const raw = typeof ev.data === "string" ? ev.data : await ev.data.text();
       let msg;
       try { msg = JSON.parse(raw); } catch (_) { return; }
-      if (msg.setupComplete) setStatus("listening (Gemini)", "live");
+      if (!this.gotSetup) console.debug("gemini <-", raw.slice(0, 300));
+      if (msg.setupComplete) {
+        this.gotSetup = true;
+        setStatus("listening (Gemini)", "live");
+      }
+      if (msg.error) {
+        this.lastError =
+          (msg.error.message || JSON.stringify(msg.error)).slice(0, 200);
+      }
       const t = msg.serverContent && msg.serverContent.inputTranscription &&
                 msg.serverContent.inputTranscription.text;
       if (t) this.onText(t);
     };
     ws.onclose = (e) => {
-      if (listening && settings.engine === "gemini") {
-        setStatus(
-          e.code === 1007 || e.code === 1008
-            ? "Gemini rejected the key — check ⚙ settings"
-            : "Gemini disconnected — press Listen to reconnect",
-          "err"
-        );
-        stopListening();
+      if (!listening || settings.engine !== "gemini") return;
+      const reason = e.reason || this.lastError || "";
+      console.warn("gemini closed", e.code, reason);
+      // setup was rejected — adapt and retry instead of guessing at the cause:
+      // an unknown model → next model; otherwise assume the modality was the
+      // problem (native-audio models refuse TEXT) and retry with AUDIO
+      const fatal = /api key|permission|quota|billing|suspended/i.test(reason);
+      if (!this.gotSetup && this.attempts < 3 && !fatal) {
+        if (/model/i.test(reason) && this.model !== GEMINI_MODELS[1]) {
+          this.model = GEMINI_MODELS[1];
+        } else {
+          this.modalities = ["AUDIO"];
+        }
+        this.cleanup();
+        this.start(true).then((ok) => { if (!ok) stopListening(); });
+        return;
       }
+      setStatus(
+        reason
+          ? "Gemini: " + reason.slice(0, 90)
+          : this.gotSetup
+            ? "Gemini disconnected — press Listen to reconnect"
+            : "Gemini refused setup (code " + e.code + ") — see console",
+        "err"
+      );
+      stopListening();
     };
 
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -818,10 +856,14 @@ document.querySelectorAll('input[name="engine"]').forEach((r) => {
   });
 });
 keyInput.value = settings.geminiKey;
-keyInput.addEventListener("change", () => {
-  settings.geminiKey = keyInput.value.trim();
-  localStorage.setItem("tp-gemini-key", settings.geminiKey);
-});
+// save on every keystroke/paste, not just blur — otherwise paste-then-click-
+// Listen could connect with an empty stored key
+["input", "change"].forEach((ev) =>
+  keyInput.addEventListener(ev, () => {
+    settings.geminiKey = keyInput.value.trim();
+    localStorage.setItem("tp-gemini-key", settings.geminiKey);
+  })
+);
 
 // keep the current word on the reading line through window resizes
 window.addEventListener("resize", followCurrent);
