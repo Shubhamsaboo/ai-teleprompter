@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Glass Teleprompter</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ambient background -->
+  <div class="bg">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <!-- top bar -->
+  <header class="glass topbar">
+    <div class="tb-left">
+      <div class="logo-dot"></div>
+      <div class="tb-title">
+        <span id="script-title">Glass Teleprompter</span>
+        <span class="tb-sub" id="script-sub">drop a .md file to load a script</span>
+      </div>
+    </div>
+    <div class="tb-center">
+      <div class="timer" id="timer">00:00</div>
+      <div class="progress-wrap"><div class="progress-bar" id="progress"></div></div>
+      <div class="pct" id="pct">0%</div>
+    </div>
+    <div class="tb-right">
+      <span class="status-pill" id="status">idle</span>
+      <label class="icon-btn" title="Load script (.md / .txt)">
+        <input type="file" id="file-input" accept=".md,.txt,.markdown" hidden />
+        📄
+      </label>
+    </div>
+  </header>
+
+  <!-- reading line + fades -->
+  <div class="fade fade-top"></div>
+  <div class="fade fade-bottom"></div>
+  <div class="reading-line"><div class="rl-arrow">▸</div><div class="rl-bar"></div></div>
+
+  <!-- scrolling stage -->
+  <main id="stage">
+    <div id="script" class="script"></div>
+    <div class="end-spacer"></div>
+  </main>
+
+  <!-- control dock -->
+  <footer class="glass dock">
+    <button class="mic-btn" id="mic-btn" title="Start / stop voice following (Space)">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+        <line x1="12" y1="19" x2="12" y2="23"></line>
+      </svg>
+      <span id="mic-label">Listen</span>
+    </button>
+
+    <div class="seg" id="mode-seg">
+      <button data-mode="voice" class="on">Voice</button>
+      <button data-mode="auto">Auto</button>
+      <button data-mode="manual">Manual</button>
+    </div>
+
+    <div class="dock-group">
+      <button class="icon-btn" id="font-minus" title="Smaller text">A−</button>
+      <button class="icon-btn" id="font-plus" title="Larger text">A+</button>
+    </div>
+
+    <div class="dock-group speed-group" id="speed-group">
+      <span class="dock-label">speed</span>
+      <input type="range" id="speed" min="10" max="120" value="42" />
+    </div>
+
+    <div class="dock-group">
+      <button class="icon-btn" id="mirror-btn" title="Mirror flip (M)">🪞</button>
+      <button class="icon-btn" id="top-btn" title="Back to top (R)">⤒</button>
+      <button class="icon-btn" id="fs-btn" title="Fullscreen (F)">⛶</button>
+    </div>
+  </footer>
+
+  <div class="hint" id="hint">Space — listen · ↑↓ — jump paragraph · F — fullscreen · M — mirror · R — restart</div>
+
+  <script src="app.js"></script>
+</body>
+</html>
