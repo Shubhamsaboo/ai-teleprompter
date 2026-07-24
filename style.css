@@ -259,6 +259,30 @@ input[type="range"]::-webkit-slider-thumb {
 .speed-group { display: none; }
 .speed-group.show { display: flex; }
 
+.settings-pop {
+  position: fixed; bottom: 84px; left: 50%; transform: translateX(-50%);
+  z-index: 45;
+  width: min(420px, calc(100vw - 32px));
+  padding: 16px 18px;
+  border-radius: 18px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.settings-pop[hidden] { display: none; }
+.sp-title { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim); }
+.sp-radio { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: rgba(238,242,248,0.85); cursor: pointer; }
+.sp-radio input { margin-top: 3px; accent-color: #7cc4ff; }
+.sp-radio b { color: #fff; }
+.sp-key { display: flex; flex-direction: column; gap: 6px; margin-left: 24px; }
+.sp-key input {
+  padding: 8px 12px; border-radius: 10px;
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff; font-size: 13px; outline: none;
+}
+.sp-key input:focus { border-color: rgba(124, 196, 255, 0.5); }
+.sp-note { font-size: 11px; color: var(--ink-dim); line-height: 1.5; }
+.sp-note a { color: var(--accent); }
+
 .hint {
   position: fixed; bottom: 2px; left: 50%; transform: translateX(-50%);
   z-index: 39;

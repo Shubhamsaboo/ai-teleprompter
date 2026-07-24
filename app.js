@@ -50,6 +50,42 @@ function normWord(w) {
     .replace(/[^a-z0-9]/g, "");
 }
 
+// spoken number words → the digits the script is written with ("forty" ↔ "40")
+const NUMWORDS = {
+  zero: "0", one: "1", two: "2", three: "3", four: "4", five: "5",
+  six: "6", seven: "7", eight: "8", nine: "9", ten: "10", eleven: "11",
+  twelve: "12", thirteen: "13", fourteen: "14", fifteen: "15",
+  sixteen: "16", seventeen: "17", eighteen: "18", nineteen: "19",
+  twenty: "20", thirty: "30", forty: "40", fifty: "50", sixty: "60",
+  seventy: "70", eighty: "80", ninety: "90", hundred: "100",
+};
+const isNum = (s) => /^\d+$/.test(s);
+
+// normalize a raw token stream: drop empties, map number words, then merge
+// "twenty five" → "25" and "four point five" → "45" (script "4.5" norms to "45")
+function normalizeTokens(raws) {
+  const out = [];
+  for (const raw of raws) {
+    let n = normWord(raw);
+    if (!n) continue;
+    out.push(NUMWORDS[n] || n);
+  }
+  const res = [];
+  for (let i = 0; i < out.length; i++) {
+    const a = out[i], b = out[i + 1], c = out[i + 2];
+    if (isNum(a) && isNum(b) && +a >= 20 && +a % 10 === 0 && +b < 10) {
+      res.push(String(+a + +b));
+      i += 1;
+    } else if (b === "point" && isNum(a) && isNum(c)) {
+      res.push(a + c);
+      i += 2;
+    } else {
+      res.push(a);
+    }
+  }
+  return res;
+}
+
 // Split a text run into word spans (matchable) preserving punctuation/spacing.
 function wordify(text, container) {
   // split into ** bold ** segments first
@@ -188,27 +224,75 @@ function lev1(a, b) {
   return edits + (a.length - i) + (b.length - j) <= 1;
 }
 
-function matchTokens(tokens) {
+// ring buffer of the last words actually heard (matched or not) — the probe
+// used to re-locate when local tracking stalls
+let recent = [];
+let missStreak = 0;
+
+function matchTokens(rawTokens) {
+  const tokens = normalizeTokens(rawTokens);
   let advanced = false;
-  for (const t of tokens) {
-    const norm = normWord(t);
-    if (!norm) continue;
+  for (const norm of tokens) {
+    recent.push(norm);
+    if (recent.length > 10) recent.shift();
     const end = Math.min(pos + LOOKAHEAD, words.length);
+    let hit = -1;
     for (let i = pos; i < end; i++) {
-      if (close(norm, words[i].norm)) {
-        for (let j = pos; j <= i; j++) words[j].el.classList.add("spoken");
-        words[i].el.classList.remove("spoken");
-        setCurrent(i);
-        pos = i + 1;
-        advanced = true;
-        break;
-      }
+      if (close(norm, words[i].norm)) { hit = i; break; }
+    }
+    if (hit >= 0) {
+      for (let j = pos; j <= hit; j++) words[j].el.classList.add("spoken");
+      words[hit].el.classList.remove("spoken");
+      setCurrent(hit);
+      pos = hit + 1;
+      advanced = true;
+      missStreak = 0;
+    } else {
+      missStreak++;
     }
   }
+  // local tracking lost — search the whole script for where the speaker
+  // actually is (handles big skips, jump-backs, ad-libbed detours)
+  if (missStreak >= 6 && recent.length >= 6 && relocate()) advanced = true;
   if (advanced) {
     followCurrent();
     updateProgress();
   }
+}
+
+// Find the best in-order alignment of the last ~8 heard words anywhere in the
+// script. Only jump on a confident match; slight preference for positions
+// near the current one so repeated phrases don't teleport us.
+function relocate() {
+  const probe = recent.slice(-8);
+  const need = Math.max(5, Math.ceil(probe.length * 0.65));
+  let best = null;
+  for (let s = 0; s < words.length; s++) {
+    if (!close(probe[0], words[s].norm) && !close(probe[1], words[s].norm))
+      continue; // cheap prefilter
+    const end = Math.min(s + probe.length + 5, words.length);
+    let k = 0, score = 0, last = s;
+    for (let w = s; w < end && k < probe.length; w++) {
+      if (close(probe[k], words[w].norm)) { score++; k++; last = w; }
+      else if (k + 1 < probe.length && close(probe[k + 1], words[w].norm)) {
+        score++; k += 2; last = w; // tolerate one misheard probe word
+      }
+    }
+    if (score < need) continue;
+    const eff = score - Math.min(1.5, Math.abs(last - pos) / 800);
+    if (!best || eff > best.eff) best = { eff, score, last };
+  }
+  if (!best) return false;
+  const idx = best.last;
+  words.forEach((w, i) => {
+    w.el.classList.toggle("spoken", i < idx);
+    if (w.el !== words[idx].el) w.el.classList.remove("current");
+  });
+  currentEl = null;
+  setCurrent(idx);
+  pos = idx + 1;
+  missStreak = 0;
+  return true;
 }
 
 let currentEl = null;
@@ -347,32 +431,189 @@ function buildRecognition() {
   return rec;
 }
 
-async function startListening() {
-  if (!getSR()) {
-    setStatus("speech API unavailable — use Chrome/Safari", "err");
-    return;
+// ---------------------------------------------------------------- engines
+// Two interchangeable ears: the browser's Web Speech API (zero setup) and
+// Gemini Live streaming transcription (more accurate; needs the user's key).
+const settings = {
+  engine: localStorage.getItem("tp-engine") || "browser",
+  geminiKey: localStorage.getItem("tp-gemini-key") || "",
+};
+const GEMINI_MODEL = "models/gemini-3.1-flash-live-preview";
+const GEMINI_WS =
+  "wss://generativelanguage.googleapis.com/ws/" +
+  "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
+
+const geminiEngine = {
+  ws: null, ctx: null, stream: null, node: null, src: null,
+  textBuf: "", flushTimer: null,
+
+  async start() {
+    if (!settings.geminiKey) {
+      setStatus("add your Gemini API key in ⚙ settings", "err");
+      return false;
+    }
+    setStatus("connecting to Gemini…", "live");
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+      });
+    } catch (_) {
+      setStatus("mic blocked — allow in site settings", "err");
+      return false;
+    }
+    const ws = new WebSocket(GEMINI_WS + "?key=" + encodeURIComponent(settings.geminiKey));
+    this.ws = ws;
+    const opened = await new Promise((r) => {
+      ws.onopen = () => r(true);
+      ws.onerror = () => r(false);
+      setTimeout(() => r(false), 8000);
+    });
+    if (!opened) {
+      setStatus("Gemini connection failed — check key / network", "err");
+      this.cleanup();
+      return false;
+    }
+    ws.send(
+      JSON.stringify({
+        setup: {
+          model: GEMINI_MODEL,
+          generationConfig: { responseModalities: ["TEXT"] },
+          systemInstruction: {
+            parts: [{ text: "You are a silent transcription service. Never reply to the audio." }],
+          },
+          inputAudioTranscription: {},
+        },
+      })
+    );
+    ws.onmessage = async (ev) => {
+      const raw = typeof ev.data === "string" ? ev.data : await ev.data.text();
+      let msg;
+      try { msg = JSON.parse(raw); } catch (_) { return; }
+      if (msg.setupComplete) setStatus("listening (Gemini)", "live");
+      const t = msg.serverContent && msg.serverContent.inputTranscription &&
+                msg.serverContent.inputTranscription.text;
+      if (t) this.onText(t);
+    };
+    ws.onclose = (e) => {
+      if (listening && settings.engine === "gemini") {
+        setStatus(
+          e.code === 1007 || e.code === 1008
+            ? "Gemini rejected the key — check ⚙ settings"
+            : "Gemini disconnected — press Listen to reconnect",
+          "err"
+        );
+        stopListening();
+      }
+    };
+
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    this.src = this.ctx.createMediaStreamSource(this.stream);
+    const proc = this.ctx.createScriptProcessor(4096, 1, 1);
+    this.node = proc;
+    const inRate = this.ctx.sampleRate;
+    proc.onaudioprocess = (e) => {
+      if (ws.readyState !== 1) return;
+      const pcm = downsampleTo16k(e.inputBuffer.getChannelData(0), inRate);
+      ws.send(
+        JSON.stringify({
+          realtimeInput: {
+            audio: { data: b64FromInt16(pcm), mimeType: "audio/pcm;rate=16000" },
+          },
+        })
+      );
+    };
+    this.src.connect(proc);
+    proc.connect(this.ctx.destination); // required for ScriptProcessor to fire; outputs silence
+    return true;
+  },
+
+  // transcription arrives as fragments; emit whole words, keep the tail until
+  // the next fragment (or a short quiet gap) completes it
+  onText(t) {
+    this.textBuf += t;
+    const parts = this.textBuf.split(/\s+/);
+    this.textBuf = parts.pop() || "";
+    if (parts.length) matchTokens(parts);
+    clearTimeout(this.flushTimer);
+    this.flushTimer = setTimeout(() => this.flush(), 800);
+  },
+  flush() {
+    if (this.textBuf) {
+      matchTokens([this.textBuf]);
+      this.textBuf = "";
+    }
+  },
+
+  stop() {
+    this.flush();
+    this.cleanup();
+  },
+  cleanup() {
+    clearTimeout(this.flushTimer);
+    try { this.node && this.node.disconnect(); } catch (_) {}
+    try { this.src && this.src.disconnect(); } catch (_) {}
+    try { this.ctx && this.ctx.close(); } catch (_) {}
+    if (this.stream) this.stream.getTracks().forEach((tr) => tr.stop());
+    if (this.ws) {
+      this.ws.onclose = null;
+      try { this.ws.close(); } catch (_) {}
+    }
+    this.ws = this.ctx = this.stream = this.node = this.src = null;
+    this.textBuf = "";
+  },
+};
+
+function downsampleTo16k(f32, inRate) {
+  const ratio = inRate / 16000;
+  const out = new Int16Array(Math.floor(f32.length / ratio));
+  for (let i = 0; i < out.length; i++) {
+    const v = f32[Math.floor(i * ratio)];
+    out[i] = Math.max(-1, Math.min(1, v)) * 0x7fff;
   }
+  return out;
+}
+
+function b64FromInt16(pcm) {
+  const bytes = new Uint8Array(pcm.buffer);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 8192)
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+  return btoa(bin);
+}
+
+async function startListening() {
   micBtn.classList.add("live");
   micLabel.textContent = "Stop";
-  if (useLocal == null) {
-    setStatus("checking speech engine…", "live");
-    useLocal = await ensureLocalModel();
-    recognition = null; // rebuild with the decided engine
-  }
-  if (!recognition) recognition = buildRecognition();
-  netErrors = 0;
   listening = true;
-  try { recognition.start(); } catch (_) {}
-  setStatus(useLocal ? "listening (on-device)" : "listening", "live");
+  if (settings.engine === "gemini") {
+    const ok = await geminiEngine.start();
+    if (!ok) { stopListening(); return; }
+  } else {
+    if (!getSR()) {
+      setStatus("speech API unavailable — use Chrome/Safari", "err");
+      stopListening();
+      return;
+    }
+    if (useLocal == null) {
+      setStatus("checking speech engine…", "live");
+      useLocal = await ensureLocalModel();
+      recognition = null; // rebuild with the decided engine
+    }
+    if (!recognition) recognition = buildRecognition();
+    netErrors = 0;
+    try { recognition.start(); } catch (_) {}
+    setStatus(useLocal ? "listening (on-device)" : "listening", "live");
+  }
   startTimer();
 }
 
 function stopListening() {
   listening = false;
   if (recognition) { try { recognition.stop(); } catch (_) {} }
+  geminiEngine.cleanup();
   micBtn.classList.remove("live");
   micLabel.textContent = "Listen";
-  setStatus("paused");
+  if (!statusPill.classList.contains("err")) setStatus("paused");
   pauseTimer();
 }
 
@@ -545,6 +786,42 @@ function jumpParagraph(dir) {
     stage.scrollTo({ top: targetScroll, behavior: "smooth" });
   }
 }
+
+// settings popover
+const settingsBtn = document.getElementById("settings-btn");
+const settingsPop = document.getElementById("settings-pop");
+const keyInput = document.getElementById("gemini-key");
+
+settingsBtn.addEventListener("click", () => {
+  settingsPop.hidden = !settingsPop.hidden;
+  settingsBtn.classList.toggle("on", !settingsPop.hidden);
+});
+document.addEventListener("click", (e) => {
+  if (
+    !settingsPop.hidden &&
+    !settingsPop.contains(e.target) &&
+    !settingsBtn.contains(e.target)
+  ) {
+    settingsPop.hidden = true;
+    settingsBtn.classList.remove("on");
+  }
+});
+
+document.querySelectorAll('input[name="engine"]').forEach((r) => {
+  r.checked = r.value === settings.engine;
+  r.addEventListener("change", () => {
+    if (!r.checked) return;
+    settings.engine = r.value;
+    localStorage.setItem("tp-engine", r.value);
+    if (listening) stopListening();
+    setStatus(r.value === "gemini" ? "engine: Gemini Live" : "engine: browser");
+  });
+});
+keyInput.value = settings.geminiKey;
+keyInput.addEventListener("change", () => {
+  settings.geminiKey = keyInput.value.trim();
+  localStorage.setItem("tp-gemini-key", settings.geminiKey);
+});
 
 // keep the current word on the reading line through window resizes
 window.addEventListener("resize", followCurrent);

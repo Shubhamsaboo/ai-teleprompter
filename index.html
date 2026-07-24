@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Glass Teleprompter</title>
-<link rel="stylesheet" href="style.css?v=2" />
+<link rel="stylesheet" href="style.css?v=3" />
 </head>
 <body>
   <!-- ambient background -->
@@ -79,11 +79,33 @@
       <button class="icon-btn" id="mirror-btn" title="Mirror flip (M)">🪞</button>
       <button class="icon-btn" id="top-btn" title="Back to top (R)">⤒</button>
       <button class="icon-btn" id="fs-btn" title="Fullscreen (F)">⛶</button>
+      <button class="icon-btn" id="settings-btn" title="Settings">⚙</button>
     </div>
   </footer>
 
+  <!-- settings popover -->
+  <div class="glass settings-pop" id="settings-pop" hidden>
+    <div class="sp-title">Speech engine</div>
+    <label class="sp-radio">
+      <input type="radio" name="engine" value="browser" />
+      <span><b>Browser</b> — built-in, zero setup (Chrome on-device / Safari)</span>
+    </label>
+    <label class="sp-radio">
+      <input type="radio" name="engine" value="gemini" />
+      <span><b>Gemini Live</b> — streaming transcription, most accurate</span>
+    </label>
+    <div class="sp-key" id="sp-key-row">
+      <input type="password" id="gemini-key" placeholder="Gemini API key" autocomplete="off" />
+      <div class="sp-note">
+        Stored only in this browser. Get a key at
+        <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">aistudio.google.com/apikey</a>.
+        Applies the next time you press Listen.
+      </div>
+    </div>
+  </div>
+
   <div class="hint" id="hint">Space — listen · ↑↓ — jump paragraph · F — fullscreen · M — mirror · R — restart</div>
 
-  <script src="app.js?v=2"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>

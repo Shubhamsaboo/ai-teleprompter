@@ -44,6 +44,27 @@ you hit **Listen**, Chrome will ask for microphone access — allow it.
 - `↑` / `↓` — jump the position back / forward a paragraph
 - `F` — fullscreen · `M` — mirror flip · `R` — restart from the top
 
+### Speech engines (⚙ in the dock)
+
+| Engine | Accuracy | Setup |
+|--------|----------|-------|
+| **Browser** (default) | good | none — Chrome's on-device model or Safari dictation |
+| **Gemini Live** | best | paste your API key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
+
+Gemini Live streams your mic audio over WebSocket to
+`gemini-3.1-flash-live-preview` and feeds its transcription to the same
+matcher. The key is stored only in your browser's localStorage and is sent
+only to Google's API endpoint.
+
+### How tracking stays locked
+
+- Fuzzy word matching (typos/mispronunciations tolerated, ~22-word lookahead)
+- Number normalization: saying "forty" matches a scripted "40",
+  "four point five" matches "4.5", "twenty five" matches "25"
+- **Global re-localization**: if you ad-lib, skip a section, or jump back to
+  re-read a line, the tracker searches the whole script for the last ~8 words
+  you said and re-locks — forward or backward — once it's confident.
+
 ### Loading a different script
 
 Drag any `.md`/`.txt` onto the window, or use the 📄 button in the top bar.
