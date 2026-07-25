@@ -1,4 +1,4 @@
-/* Glass Teleprompter — voice-following prompter
+/* AI Teleprompter — voice-following prompter
  *
  * Modes:
  *  voice  — Web Speech API listens and advances a word pointer by fuzzy-matching
@@ -1116,7 +1116,7 @@ document.body.addEventListener("drop", (e) => {
 // welcome / empty state + persistence
 const welcomeEl = document.getElementById("welcome");
 
-const SAMPLE_MD = `# GLASS TELEPROMPTER — SAMPLE SCRIPT
+const SAMPLE_MD = `# AI TELEPROMPTER — SAMPLE SCRIPT
 
 **~40 sec**
 

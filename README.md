@@ -1,4 +1,4 @@
-# Glass Teleprompter
+# AI Teleprompter
 
 A voice-following teleprompter that runs in your browser. It listens through
 the mic and scrolls the script as you speak — no pedals, no manual scrolling,
