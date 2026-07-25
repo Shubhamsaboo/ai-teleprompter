@@ -270,7 +270,10 @@ function jumpDisplayTo(idx) {
   setCurrent(idx);
 }
 
+let lastTokensAt = 0; // for the ?debug HUD — when speech last reached the matcher
+
 function matchCore(tr, rawTokens, apply) {
+  lastTokensAt = performance.now();
   const tokens = normalizeTokens(rawTokens);
   let advanced = false;
   for (let t = 0; t < tokens.length; t++) {
@@ -1339,6 +1342,39 @@ if (!getSR()) {
       showPanel();
     });
 })();
+
+// ---------------------------------------------------------------- debug HUD (?debug)
+// Live meters to localize lag: render FPS (low = something throttling the
+// page, e.g. an extension content script), time since speech last reached
+// the matcher (high while talking = recognition-side), and tracker position.
+if (new URLSearchParams(location.search).has("debug")) {
+  const hud = document.createElement("div");
+  hud.style.cssText =
+    "position:fixed;top:76px;right:16px;z-index:60;" +
+    "font:11px ui-monospace,Menlo,monospace;color:#9fe3af;" +
+    "background:rgba(10,13,20,.85);border:1px solid rgba(255,255,255,.15);" +
+    "border-radius:10px;padding:8px 12px;pointer-events:none;white-space:pre";
+  document.body.appendChild(hud);
+  let frames = 0;
+  let mark = performance.now();
+  (function hudLoop() {
+    frames++;
+    const now = performance.now();
+    if (now - mark >= 1000) {
+      const fps = Math.round((frames * 1000) / (now - mark));
+      frames = 0;
+      mark = now;
+      const gap = lastTokensAt
+        ? ((now - lastTokensAt) / 1000).toFixed(1) + "s ago"
+        : "—";
+      hud.textContent =
+        `render   ${fps} fps\n` +
+        `speech   ${gap}\n` +
+        `tracker  ${T.pos}/${words.length}`;
+    }
+    requestAnimationFrame(hudLoop);
+  })();
+}
 
 // ---------------------------------------------------------------- simulation (?sim)
 // Dev aid: feeds script words as fake speech so the follow logic can be tested
