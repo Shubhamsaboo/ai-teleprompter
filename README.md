@@ -53,8 +53,8 @@ speak. Whatever you load persists in your browser between visits.
 ## Let an AI write the script
 
 The fastest path from idea to prompter: click **✨ Copy AI prompt** on the
-script panel, paste it into any AI agent — Claude Code, Codex, Antigravity,
-ChatGPT, Gemini — together with your draft, notes, or even just a topic,
+script panel, paste it into Claude, ChatGPT, or Gemini together with your
+draft, notes, or even just a topic,
 and you'll get back a `.md` script in exactly the right format. Drop the
 result onto the teleprompter and read.
 

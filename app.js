@@ -1206,7 +1206,7 @@ Skip a line, ad-lib, or jump back to re-read — the tracker follows you.
 **[END]**
 `;
 
-// paste-anywhere prompt: teaches any AI agent (Claude Code, Codex, ChatGPT…)
+// paste-anywhere prompt: teaches any AI (Claude, ChatGPT, Gemini…)
 // to produce a script this app parses perfectly
 const AI_PROMPT = `Turn my draft (notes, outline, or topic) below into a teleprompter script in this exact Markdown format.
 
