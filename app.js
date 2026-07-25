@@ -439,10 +439,12 @@ async function localAvailability() {
   const SR = getSR();
   if (!SR || typeof SR.available !== "function") return "unsupported";
   try {
-    // never let a stalled engine probe hang the UI — fall back to cloud
+    // never let a stalled engine probe hang the UI — fall back to cloud.
+    // Generous bound: a slow first check on a fresh origin must not dump
+    // users onto the laggy cloud path.
     return await withTimeout(
       SR.available({ langs: [LANG], processLocally: true }),
-      4000,
+      8000,
       "unsupported"
     );
   } catch (_) {
@@ -797,7 +799,10 @@ function b64FromInt16(pcm) {
 
 async function startBrowserEngine() {
   if (!getSR()) return false;
-  if (useLocal == null) {
+  // only an on-device "yes" is cached — a "no" (which may just be a slow
+  // first-visit check) is re-evaluated on every Listen so one bad probe
+  // can't strand the whole session on the laggy cloud path
+  if (useLocal !== true) {
     setStatus("checking speech engine…", "live");
     useLocal = await ensureLocalModel();
     recognition = null; // rebuild with the decided engine
@@ -841,7 +846,10 @@ async function startListening() {
       stopListening();
       return;
     }
-    setStatus(useLocal ? "listening (on-device)" : "listening", "live");
+    setStatus(
+      useLocal ? "listening (on-device)" : "listening (cloud — slower)",
+      "live"
+    );
   }
   startTimer();
 }
@@ -1072,16 +1080,6 @@ keyInput.value = settings.geminiKey;
   keyInput.addEventListener(ev, () => {
     settings.geminiKey = keyInput.value.trim();
     localStorage.setItem("tp-gemini-key", settings.geminiKey);
-    // a key on the default engine means the user wants Gemini — steer to
-    // hybrid, which has Gemini's accuracy without its 1-2s transcript lag
-    if (settings.geminiKey && settings.engine === "browser") {
-      settings.engine = "hybrid";
-      localStorage.setItem("tp-engine", "hybrid");
-      document.querySelectorAll('input[name="engine"]').forEach(
-        (r) => (r.checked = r.value === "hybrid")
-      );
-      setStatus("engine: Hybrid (recommended with a key)");
-    }
   })
 );
 
