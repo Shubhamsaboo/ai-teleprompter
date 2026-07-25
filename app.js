@@ -1318,7 +1318,7 @@ document.getElementById("w-clear").addEventListener("click", () => {
     .then((md) => parseScript(md, "Script"))
     .catch(() => {
       subEl.textContent = "no script loaded";
-      welcomeEl.hidden = false;
+      showPanel();
     });
 })();
 
