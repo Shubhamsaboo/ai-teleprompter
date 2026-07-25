@@ -9,6 +9,12 @@ no accounts, no server. Drop in a Markdown script and start reading.
 **Hosted:** open the site, click **Try the sample** (or drop your own `.md`
 file), press **Listen**, allow the microphone, and read.
 
+**Changing scripts:** click the script title in the top bar (or the 📄
+button) any time — the script panel reopens with the file picker, the
+format guide, a downloadable starter template, and a "remove script"
+option. `Esc` closes it. Your loaded script persists in the browser until
+you replace or remove it.
+
 **Local:**
 
 ```bash
@@ -80,6 +86,7 @@ is sent only to Google's API endpoint. Get one at
 - `Space` — start/stop listening (or pause auto-scroll)
 - `↑` / `↓` — nudge the position back / forward a paragraph
 - `F` — fullscreen · `M` — mirror flip (beam-splitter rigs) · `R` — restart
+- `Esc` — close panels · click the title — script panel
 - Modes: **Voice** (follows speech) · **Auto** (constant speed slider) ·
   **Manual** (free scroll)
 - `?sim` URL flag — feeds the script to the matcher at ~150 wpm with random

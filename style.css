@@ -59,7 +59,13 @@ html, body {
   box-shadow: 0 0 12px var(--accent);
   flex: none;
 }
-.tb-title { display: flex; flex-direction: column; min-width: 0; }
+.tb-title {
+  display: flex; flex-direction: column; min-width: 0;
+  background: none; border: none; padding: 4px 8px; margin: -4px -8px;
+  border-radius: 10px; color: inherit; font: inherit; text-align: left;
+  cursor: pointer; transition: background 0.2s;
+}
+.tb-title:hover { background: rgba(255, 255, 255, 0.07); }
 .tb-title > span:first-child {
   font-weight: 700; font-size: 14px; letter-spacing: 0.02em;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -331,6 +337,17 @@ input[type="range"]::-webkit-slider-thumb {
   overflow-x: auto;
 }
 .w-drop { font-size: 12px; color: var(--ink-dim); }
+.w-close {
+  position: absolute; top: 12px; right: 12px;
+  min-width: 30px; height: 30px; font-size: 12px;
+}
+.w-link {
+  background: none; border: none; cursor: pointer;
+  font-size: 11px; color: var(--ink-dim);
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.w-link:hover { color: #fca5a5; }
+.w-link[hidden] { display: none; }
 
 /* drag-over state */
 body.dragging::after {

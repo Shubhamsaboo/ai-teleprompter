@@ -4,7 +4,10 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Glass Teleprompter</title>
-<link rel="stylesheet" href="style.css?v=5" />
+<meta name="description" content="A voice-following teleprompter. It listens through your mic and scrolls your Markdown script as you speak." />
+<meta name="theme-color" content="#0a0d14" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎤</text></svg>" />
+<link rel="stylesheet" href="style.css?v=6" />
 </head>
 <body>
   <!-- ambient background -->
@@ -18,10 +21,10 @@
   <header class="glass topbar">
     <div class="tb-left">
       <div class="logo-dot"></div>
-      <div class="tb-title">
+      <button class="tb-title" id="title-btn" title="Scripts & format guide">
         <span id="script-title">Glass Teleprompter</span>
-        <span class="tb-sub" id="script-sub">drop a .md file to load a script</span>
-      </div>
+        <span class="tb-sub" id="script-sub">no script loaded</span>
+      </button>
     </div>
     <div class="tb-center">
       <div class="timer" id="timer">00:00</div>
@@ -110,11 +113,13 @@
 
   <!-- welcome / empty state -->
   <div class="glass welcome" id="welcome" hidden>
+    <button class="icon-btn w-close" id="w-close" title="Back to the script (Esc)">✕</button>
     <div class="w-title">Glass Teleprompter</div>
     <p class="w-sub">A teleprompter that listens and scrolls as you speak.</p>
     <div class="w-actions">
       <button class="mic-btn" id="w-browse">Open a script…</button>
       <button class="icon-btn w-sample" id="w-sample">Try the sample</button>
+      <button class="icon-btn w-sample" id="w-template">Download template</button>
     </div>
     <div class="w-format">
       <div class="w-format-title">Script format — plain Markdown</div>
@@ -126,10 +131,11 @@ Plain lines        spoken text — one thought per line reads best
 [SCREEN: b-roll]   visual cue for your edit</pre>
     </div>
     <p class="w-drop">…or drag any .md / .txt file anywhere in this window</p>
+    <button class="w-link" id="w-clear" hidden>Remove current script from this browser</button>
   </div>
 
   <div class="hint" id="hint">Space — listen · ↑↓ — jump paragraph · F — fullscreen · M — mirror · R — restart</div>
 
-  <script src="app.js?v=9"></script>
+  <script src="app.js?v=10"></script>
 </body>
 </html>

@@ -215,8 +215,13 @@ function parseScript(md, name) {
   }
 
   titleEl.textContent = title;
-  subEl.textContent = `${words.length} words`;
-  document.getElementById("welcome").hidden = words.length > 0;
+  subEl.textContent = words.length
+    ? `${words.length} words · click to change script`
+    : "no script loaded";
+  const panel = document.getElementById("welcome");
+  panel.hidden = words.length > 0;
+  document.getElementById("w-close").hidden = words.length === 0;
+  document.getElementById("w-clear").hidden = words.length === 0;
   stage.scrollTop = 0;
   targetScroll = null;
   resetTimer();
@@ -804,6 +809,11 @@ async function startBrowserEngine() {
 }
 
 async function startListening() {
+  if (!words.length) {
+    setStatus("load a script first", "err");
+    showPanel();
+    return;
+  }
   micBtn.classList.add("live");
   micLabel.textContent = "Stop";
   listening = true;
@@ -984,6 +994,11 @@ document.addEventListener("keydown", (e) => {
     case "KeyF": toggleFullscreen(); break;
     case "KeyM": toggleMirror(); break;
     case "KeyR": restart(); break;
+    case "Escape":
+      hidePanel();
+      settingsPop.hidden = true;
+      settingsBtn.classList.remove("on");
+      break;
   }
 });
 
@@ -1074,9 +1089,10 @@ stage.addEventListener(
 
 // ---------------------------------------------------------------- loading
 const fileInput = document.getElementById("file-input");
-fileInput.addEventListener("change", async () => {
+fileInput.addEventListener("change", () => {
   const f = fileInput.files[0];
-  if (f) loadScript(await f.text(), f.name.replace(/\.(md|txt|markdown)$/i, ""));
+  if (f) loadFile(f);
+  fileInput.value = ""; // allow re-selecting the same file after edits
 });
 
 ["dragenter", "dragover"].forEach((ev) =>
@@ -1092,9 +1108,9 @@ fileInput.addEventListener("change", async () => {
     document.body.classList.remove("dragging");
   })
 );
-document.body.addEventListener("drop", async (e) => {
+document.body.addEventListener("drop", (e) => {
   const f = e.dataTransfer.files[0];
-  if (f) loadScript(await f.text(), f.name.replace(/\.(md|txt|markdown)$/i, ""));
+  if (f) loadFile(f);
 });
 
 // welcome / empty state + persistence
@@ -1147,15 +1163,106 @@ And use bracketed cues for pauses and visuals.
 That's it. Go write something worth saying.
 `;
 
+const TEMPLATE_MD = `# MY VIDEO — TELEPROMPTER SCRIPT
+
+**Target runtime: 5 min**
+
+---
+
+# ░░ COLD OPEN ░░
+
+**~30 sec**
+
+Write one thought per line.
+
+Short lines scroll smoothly and are easy to read aloud.
+
+This word is **punched** so it stands out on screen.
+
+[PAUSE]
+
+A bracketed cue on its own line becomes a chip like the one above.
+
+[SLOW] A cue at the start of a line applies to that line.
+
+[SCREEN: show the product dashboard]
+
+Screen cues mark visual changes for your edit. They are never spoken.
+
+---
+
+# ░░ SECTION ONE ░░
+
+## The first point
+
+Lines under a ## heading are spoken — the heading is too.
+
+Numbers work naturally: say "forty" and the prompter matches 40.
+
+Skip a line, ad-lib, or jump back to re-read — the tracker follows you.
+
+---
+
+**[END]**
+`;
+
 function loadScript(md, name) {
+  if (listening) stopListening(); // fresh script, fresh session
   parseScript(md, name);
-  try {
-    localStorage.setItem("tp-script", JSON.stringify({ md, name }));
-  } catch (_) {} // oversized script — still works, just won't persist
+  if (words.length) {
+    setStatus("script loaded");
+    try {
+      localStorage.setItem("tp-script", JSON.stringify({ md, name }));
+    } catch (_) {} // oversized script — still works, just won't persist
+  } else {
+    setStatus("no readable lines — check the format below", "err");
+  }
 }
 
+// reject binaries and oversized files before they hit the parser
+async function loadFile(f) {
+  const nameOk = /\.(md|txt|markdown)$/i.test(f.name);
+  const typeOk = !f.type || f.type.startsWith("text/");
+  if (!nameOk && !typeOk) {
+    setStatus("that isn't a text file — use .md or .txt", "err");
+    return;
+  }
+  if (f.size > 2 * 1024 * 1024) {
+    setStatus("file too large — scripts should be under 2 MB", "err");
+    return;
+  }
+  loadScript(await f.text(), f.name.replace(/\.(md|txt|markdown)$/i, ""));
+}
+
+const welcomePanel = document.getElementById("welcome");
+function showPanel() {
+  welcomePanel.hidden = false;
+  document.getElementById("w-close").hidden = words.length === 0;
+  document.getElementById("w-clear").hidden = words.length === 0;
+}
+function hidePanel() {
+  if (words.length) welcomePanel.hidden = true; // nothing to go back to otherwise
+}
+
+document.getElementById("title-btn").addEventListener("click", () => {
+  welcomePanel.hidden ? showPanel() : hidePanel();
+});
+document.getElementById("w-close").addEventListener("click", hidePanel);
 document.getElementById("w-browse").addEventListener("click", () => fileInput.click());
 document.getElementById("w-sample").addEventListener("click", () => loadScript(SAMPLE_MD, "Sample"));
+document.getElementById("w-template").addEventListener("click", () => {
+  const blob = new Blob([TEMPLATE_MD], { type: "text/markdown" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "teleprompter-script-template.md";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+document.getElementById("w-clear").addEventListener("click", () => {
+  localStorage.removeItem("tp-script");
+  parseScript("", "");
+  setStatus("script removed");
+});
 
 // boot: last-loaded script → local script.md (dev convenience) → welcome card
 (function boot() {
