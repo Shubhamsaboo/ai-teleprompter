@@ -1307,6 +1307,16 @@ document.getElementById("w-clear").addEventListener("click", () => {
   setStatus("script removed");
 });
 
+// browser-support note: informational in Chrome/Safari, amber warning where
+// the speech engine is actually missing (Firefox, etc.)
+if (!getSR()) {
+  const note = document.getElementById("w-browsers");
+  note.classList.add("warn");
+  note.innerHTML =
+    "⚠️ This browser has no speech engine — voice tracking won't work here. " +
+    "Use <b>Chrome</b> or <b>Safari</b> (Auto and Manual modes still work).";
+}
+
 // boot: last-loaded script → local script.md (dev convenience) → welcome card
 (function boot() {
   try {

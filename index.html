@@ -7,7 +7,7 @@
 <meta name="description" content="A voice-following teleprompter. It listens through your mic and scrolls your Markdown script as you speak." />
 <meta name="theme-color" content="#0a0d14" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎤</text></svg>" />
-<link rel="stylesheet" href="style.css?v=7" />
+<link rel="stylesheet" href="style.css?v=8" />
 </head>
 <body>
   <!-- ambient background -->
@@ -135,11 +135,13 @@ Plain lines        spoken text — one thought per line reads best
 [SCREEN: b-roll]   visual cue for your edit</pre>
     </div>
     <p class="w-drop">…or drag any .md / .txt file anywhere in this window</p>
+    <p class="w-browsers" id="w-browsers">Works in <b>Chrome</b> and <b>Safari</b> —
+    other browsers don't ship the speech engine that voice tracking needs.</p>
     <button class="w-link" id="w-clear" hidden>Remove current script from this browser</button>
   </div>
 
   <div class="hint" id="hint">Space — listen · ↑↓ — jump paragraph · F — fullscreen · M — mirror · R — restart</div>
 
-  <script src="app.js?v=13"></script>
+  <script src="app.js?v=14"></script>
 </body>
 </html>
