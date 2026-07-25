@@ -216,6 +216,7 @@ function parseScript(md, name) {
 
   titleEl.textContent = title;
   subEl.textContent = `${words.length} words`;
+  document.getElementById("welcome").hidden = words.length > 0;
   stage.scrollTop = 0;
   targetScroll = null;
   resetTimer();
@@ -1075,7 +1076,7 @@ stage.addEventListener(
 const fileInput = document.getElementById("file-input");
 fileInput.addEventListener("change", async () => {
   const f = fileInput.files[0];
-  if (f) parseScript(await f.text(), f.name.replace(/\.(md|txt|markdown)$/i, ""));
+  if (f) loadScript(await f.text(), f.name.replace(/\.(md|txt|markdown)$/i, ""));
 });
 
 ["dragenter", "dragover"].forEach((ev) =>
@@ -1093,16 +1094,83 @@ fileInput.addEventListener("change", async () => {
 );
 document.body.addEventListener("drop", async (e) => {
   const f = e.dataTransfer.files[0];
-  if (f) parseScript(await f.text(), f.name.replace(/\.(md|txt|markdown)$/i, ""));
+  if (f) loadScript(await f.text(), f.name.replace(/\.(md|txt|markdown)$/i, ""));
 });
 
-// boot: load bundled script
-fetch("script.md")
-  .then((r) => (r.ok ? r.text() : Promise.reject()))
-  .then((md) => parseScript(md, "Loop Engineering"))
-  .catch(() => {
-    subEl.textContent = "no script loaded — drop a .md file";
-  });
+// welcome / empty state + persistence
+const welcomeEl = document.getElementById("welcome");
+
+const SAMPLE_MD = `# GLASS TELEPROMPTER — SAMPLE SCRIPT
+
+**~40 sec**
+
+---
+
+# ░░ WELCOME ░░
+
+Welcome to your teleprompter.
+
+Press **Listen**, allow the microphone,
+
+and just start reading these lines out loud.
+
+[PAUSE]
+
+The script follows **your voice**.
+
+Skip a sentence — it catches up.
+
+Jump back to re-read — it follows.
+
+[SLOW] Slow down for emphasis, and take your time.
+
+[SCREEN: cutaway to product demo]
+
+Cue chips like these are stage directions.
+
+The tracker **ignores** them completely.
+
+---
+
+## ▸ MAKE IT YOURS
+
+Drop any markdown file onto this window to load your own script.
+
+Use plain lines for speech.
+
+Use **double asterisks** to punch important words.
+
+And use bracketed cues for pauses and visuals.
+
+[PAUSE]
+
+That's it. Go write something worth saying.
+`;
+
+function loadScript(md, name) {
+  parseScript(md, name);
+  try {
+    localStorage.setItem("tp-script", JSON.stringify({ md, name }));
+  } catch (_) {} // oversized script — still works, just won't persist
+}
+
+document.getElementById("w-browse").addEventListener("click", () => fileInput.click());
+document.getElementById("w-sample").addEventListener("click", () => loadScript(SAMPLE_MD, "Sample"));
+
+// boot: last-loaded script → local script.md (dev convenience) → welcome card
+(function boot() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("tp-script") || "null");
+    if (saved && saved.md) { parseScript(saved.md, saved.name); return; }
+  } catch (_) {}
+  fetch("script.md")
+    .then((r) => (r.ok ? r.text() : Promise.reject()))
+    .then((md) => parseScript(md, "Script"))
+    .catch(() => {
+      subEl.textContent = "no script loaded";
+      welcomeEl.hidden = false;
+    });
+})();
 
 // ---------------------------------------------------------------- simulation (?sim)
 // Dev aid: feeds script words as fake speech so the follow logic can be tested

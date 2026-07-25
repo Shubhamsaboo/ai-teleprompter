@@ -1,50 +1,50 @@
 # Glass Teleprompter
 
-A voice-following teleprompter for the Mac. It listens to you through the mic
-and scrolls the script as you speak — no pedals, no manual scrolling.
+A voice-following teleprompter that runs in your browser. It listens through
+the mic and scrolls the script as you speak — no pedals, no manual scrolling,
+no accounts, no server. Drop in a Markdown script and start reading.
 
-## Run it
+## Quick start
+
+**Hosted:** open the site, click **Try the sample** (or drop your own `.md`
+file), press **Listen**, allow the microphone, and read.
+
+**Local:**
 
 ```bash
 ./start.sh
 ```
 
-That serves the app at http://localhost:8400 and opens Chrome. The first time
-you hit **Listen**, Chrome will ask for microphone access — allow it.
+serves it at http://localhost:8400. Any static file server works — it's
+plain HTML/CSS/JS with zero dependencies. The only requirement is a secure
+origin (HTTPS or localhost) because the microphone APIs demand one.
 
-> Voice mode uses the browser's Web Speech API in **Chrome** or Safari.
-> On modern Chrome it prefers the **on-device** engine: the first time you hit
-> Listen, Chrome may download its English speech model (one-time, then voice
-> mode works fully offline). Chrome's old cloud engine is being retired and
-> often fails with a `network` error even when you're online — that's why
-> on-device is the default here. If the status pill says "speech engine
-> unreachable", update Chrome (150+) or use Safari, whose dictation engine
-> also runs on-device.
+## Script format
 
-## Using it
+Scripts are plain Markdown, written one thought per line:
 
-1. Hit **Listen** (or press `Space`) and start reading from the reading line (▸).
-2. The prompter matches your words and glides the script so your current word
-   stays at the line. Skipped or flubbed words are fine — it fuzzy-matches and
-   catches up.
-3. `[PAUSE]`, `[SLOW]`, `[LEAN IN]`, and `[SCREEN]` cues show as colored glass
-   chips; they're ignored by the voice matcher.
+```markdown
+# ░░ COLD OPEN ░░          ← section banner (not spoken)
 
-### Modes
+**~1 min 40 sec**           ← timing note (not spoken)
 
-| Mode   | What it does                                      |
-|--------|---------------------------------------------------|
-| Voice  | Follows your speech (default)                     |
-| Auto   | Constant-speed scroll; speed slider appears       |
-| Manual | Free scroll with the wheel / arrow keys           |
+## Step one — the hook      ← spoken subheading
 
-### Keys
+You open the tool.          ← spoken line
 
-- `Space` — start/stop listening (or pause auto-scroll)
-- `↑` / `↓` — jump the position back / forward a paragraph
-- `F` — fullscreen · `M` — mirror flip · `R` — restart from the top
+This is the **key** part.   ← bold = punch word, highlighted on screen
 
-### Speech engines (⚙ in the dock)
+[PAUSE]                     ← cue chip: pacing direction, not spoken
+[SLOW] Take this slowly.    ← cue + spoken text on one line
+[SCREEN: cutaway to demo]   ← visual cue for your edit
+```
+
+Recognized cues: `[PAUSE]`, `[LONG PAUSE]`, `[SLOW]`, `[LEAN IN]`,
+`[SCREEN: …]` — each renders as a color-coded glass chip that the voice
+tracker skips over. Everything else on a line is treated as words you'll
+speak. Whatever you load persists in your browser between visits.
+
+## Speech engines (⚙ in the dock)
 
 | Engine | Latency | Accuracy | Setup |
 |--------|---------|----------|-------|
@@ -57,33 +57,37 @@ while Gemini's slower-but-smarter transcript runs a shadow tracker that
 corrects the position whenever the fast engine stalls or drifts. If Gemini
 drops mid-session, it degrades to browser-only without stopping.
 
-Gemini Live streams your mic audio over WebSocket to
-`gemini-3.1-flash-live-preview` and feeds its transcription to the same
-matcher. The key is stored only in your browser's localStorage and is sent
-only to Google's API endpoint.
+The Gemini engine streams mic audio over WebSocket to the Live API model
+your account serves (discovered automatically via ListModels — nothing
+hardcoded). Your API key is stored only in your browser's localStorage and
+is sent only to Google's API endpoint. Get one at
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey).
 
-### How tracking stays locked
+## How tracking stays locked
 
-- Fuzzy word matching (typos/mispronunciations tolerated, ~22-word lookahead)
+- Fuzzy word matching tolerant of typos, mispronunciations, and accents
+- Evidence-weighted advancing: common words ("you", "the") can't cause
+  jumps, and far matches need the next word to corroborate — so scripts
+  with repetitive phrasing don't skip lines
 - Number normalization: saying "forty" matches a scripted "40",
   "four point five" matches "4.5", "twenty five" matches "25"
-- **Global re-localization**: if you ad-lib, skip a section, or jump back to
-  re-read a line, the tracker searches the whole script for the last ~8 words
-  you said and re-locks — forward or backward — once it's confident.
+- Global re-localization: ad-lib, skip a section, or jump back to re-read —
+  the tracker searches the whole script for the last ~8 words you said and
+  re-locks, forward or backward, once it's confident
 
-### Loading a different script
+## Controls
 
-Drag any `.md`/`.txt` onto the window, or use the 📄 button in the top bar.
-The parser understands the teleprompter markdown conventions used in
-`script.md`: `#` section banners, `**bold**` punch words, and `[CUE]` lines.
+- `Space` — start/stop listening (or pause auto-scroll)
+- `↑` / `↓` — nudge the position back / forward a paragraph
+- `F` — fullscreen · `M` — mirror flip (beam-splitter rigs) · `R` — restart
+- Modes: **Voice** (follows speech) · **Auto** (constant speed slider) ·
+  **Manual** (free scroll)
+- `?sim` URL flag — feeds the script to the matcher at ~150 wpm with random
+  skips, for testing the tracking without a mic
 
 ## Files
 
-- `index.html` / `style.css` / `app.js` — the app (no build step, no deps)
-- `script.md` — the currently bundled script (Loop Engineering)
+- `index.html` / `style.css` / `app.js` — the whole app, no build step
 - `start.sh` — local server + browser launcher
-
-## Testing without a mic
-
-Open http://localhost:8400/?sim and hit the small **▶ sim** button — it feeds
-the script to the matcher at ~150 wpm with random skipped words.
+- Drop a `script.md` next to `index.html` to have it auto-load on boot
+  (it's gitignored — handy for keeping a private script in a local clone)

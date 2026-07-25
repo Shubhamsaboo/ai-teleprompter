@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Glass Teleprompter</title>
-<link rel="stylesheet" href="style.css?v=4" />
+<link rel="stylesheet" href="style.css?v=5" />
 </head>
 <body>
   <!-- ambient background -->
@@ -108,8 +108,28 @@
     </div>
   </div>
 
+  <!-- welcome / empty state -->
+  <div class="glass welcome" id="welcome" hidden>
+    <div class="w-title">Glass Teleprompter</div>
+    <p class="w-sub">A teleprompter that listens and scrolls as you speak.</p>
+    <div class="w-actions">
+      <button class="mic-btn" id="w-browse">Open a script…</button>
+      <button class="icon-btn w-sample" id="w-sample">Try the sample</button>
+    </div>
+    <div class="w-format">
+      <div class="w-format-title">Script format — plain Markdown</div>
+      <pre># SECTION NAME     section banner (not spoken)
+## Heading         spoken subheading
+Plain lines        spoken text — one thought per line reads best
+**bold**           punched word
+[PAUSE] [SLOW]     pacing cues — chips, not spoken
+[SCREEN: b-roll]   visual cue for your edit</pre>
+    </div>
+    <p class="w-drop">…or drag any .md / .txt file anywhere in this window</p>
+  </div>
+
   <div class="hint" id="hint">Space — listen · ↑↓ — jump paragraph · F — fullscreen · M — mirror · R — restart</div>
 
-  <script src="app.js?v=8"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>
