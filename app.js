@@ -1072,6 +1072,16 @@ keyInput.value = settings.geminiKey;
   keyInput.addEventListener(ev, () => {
     settings.geminiKey = keyInput.value.trim();
     localStorage.setItem("tp-gemini-key", settings.geminiKey);
+    // a key on the default engine means the user wants Gemini — steer to
+    // hybrid, which has Gemini's accuracy without its 1-2s transcript lag
+    if (settings.geminiKey && settings.engine === "browser") {
+      settings.engine = "hybrid";
+      localStorage.setItem("tp-engine", "hybrid");
+      document.querySelectorAll('input[name="engine"]').forEach(
+        (r) => (r.checked = r.value === "hybrid")
+      );
+      setStatus("engine: Hybrid (recommended with a key)");
+    }
   })
 );
 
