@@ -28,7 +28,9 @@ let words = [];          // [{norm, el}] spoken-matchable words in order
 // In hybrid mode Gemini runs a second, DOM-less "shadow" tracker whose more
 // accurate (but slower) position corrects T when they diverge.
 function makeTracker() {
-  return { pos: 0, recent: [], missStreak: 0, lastAdvance: 0 };
+  // missBuf: tokens that failed to match since the last hit — the only valid
+  // evidence of a new location (matched tokens describe where we've BEEN)
+  return { pos: 0, missBuf: [], missStreak: 0, lastAdvance: 0, back: null };
 }
 let T = makeTracker();
 let shadow = null;
@@ -278,13 +280,12 @@ function matchCore(tr, rawTokens, apply) {
   let advanced = false;
   for (let t = 0; t < tokens.length; t++) {
     const norm = tokens[t];
-    tr.recent.push(norm);
-    if (tr.recent.length > 10) tr.recent.shift();
-    // Evidence-weighted window: stopwords only match the immediate next few
-    // words; content words start narrow and the window widens only while
-    // genuine misses accumulate (speaker actually skipped something).
+    // Evidence-weighted window: a stopword only confirms the exact next word
+    // (it's connective tissue, not positional evidence — anything wider lets
+    // "you/the" chains creep through stopword-dense passages); content words
+    // start narrow and widen only while genuine misses accumulate.
     const win = STOPWORDS.has(norm)
-      ? 3
+      ? 1
       : Math.min(4 + tr.missStreak * 3, LOOKAHEAD);
     const end = Math.min(tr.pos + win, words.length);
     let hit = -1;
@@ -307,15 +308,54 @@ function matchCore(tr, rawTokens, apply) {
       if (apply) applyAdvance(tr.pos, hit);
       tr.pos = hit + 1;
       tr.missStreak = 0;
+      // only a forward CONTENT match disproves a pending jump-back — re-read
+      // lines are full of stopwords that also match ahead, and they must not
+      // keep resetting the backward evidence
+      if (!STOPWORDS.has(norm)) tr.back = null;
+      tr.missBuf = [];
       tr.lastAdvance = performance.now();
       advanced = true;
     } else {
       tr.missStreak++;
+      tr.missBuf.push(norm);
+      if (tr.missBuf.length > 10) tr.missBuf.shift();
+      // fast jump-back detector: re-reading a nearby earlier line is the most
+      // common "jump" — two coherent content-word hits just behind the
+      // current position snap us back in under a second
+      if (!STOPWORDS.has(norm)) {
+        if (tr.back) {
+          let m = -1;
+          const bEnd = Math.min(tr.back.expect + 4, tr.pos);
+          for (let i = tr.back.expect; i < bEnd; i++)
+            if (close(norm, words[i].norm)) { m = i; break; }
+          tr.back = m >= 0
+            ? { streak: tr.back.streak + 1, last: m, expect: m + 1 }
+            : null;
+        }
+        if (!tr.back) {
+          const bStart = Math.max(0, tr.pos - 40);
+          for (let i = tr.pos - 1; i >= bStart; i--)
+            if (close(norm, words[i].norm)) {
+              tr.back = { streak: 1, last: i, expect: i + 1 };
+              break;
+            }
+        }
+        if (tr.back && tr.back.streak >= 2) {
+          const idx = tr.back.last;
+          if (apply) jumpDisplayTo(idx);
+          tr.pos = idx + 1;
+          tr.missStreak = 0;
+          tr.missBuf = [];
+          tr.back = null;
+          tr.lastAdvance = performance.now();
+          advanced = true;
+        }
+      }
     }
   }
   // local tracking lost — search the whole script for where the speaker
   // actually is (handles big skips, jump-backs, ad-libbed detours)
-  if (tr.missStreak >= 6 && tr.recent.length >= 6 && relocateCore(tr, apply))
+  if (tr.missBuf.length >= 5 && relocateCore(tr, apply))
     advanced = true;
   if (advanced && apply) {
     followCurrent();
@@ -328,28 +368,46 @@ function matchCore(tr, rawTokens, apply) {
 // script. Only jump on a confident match; slight preference for positions
 // near the current one so repeated phrases don't teleport us.
 function relocateCore(tr, apply) {
-  const probe = tr.recent.slice(-8);
-  const need = Math.max(5, Math.ceil(probe.length * 0.65));
-  let best = null;
-  for (let s = 0; s < words.length; s++) {
-    if (!close(probe[0], words[s].norm) && !close(probe[1], words[s].norm))
-      continue; // cheap prefilter
-    const end = Math.min(s + probe.length + 5, words.length);
-    let k = 0, score = 0, last = s;
-    for (let w = s; w < end && k < probe.length; w++) {
-      if (close(probe[k], words[w].norm)) { score++; k++; last = w; }
-      else if (k + 1 < probe.length && close(probe[k + 1], words[w].norm)) {
-        score++; k += 2; last = w; // tolerate one misheard probe word
+  const attempt = (probe, need) => {
+    let best = null;
+    for (let s = 0; s < words.length; s++) {
+      if (!close(probe[0], words[s].norm) && !close(probe[1], words[s].norm))
+        continue; // cheap prefilter
+      const end = Math.min(s + probe.length + 5, words.length);
+      let k = 0, score = 0, last = s;
+      for (let w = s; w < end && k < probe.length; w++) {
+        if (close(probe[k], words[w].norm)) { score++; k++; last = w; }
+        else if (k + 1 < probe.length && close(probe[k + 1], words[w].norm)) {
+          score++; k += 2; last = w; // tolerate one misheard probe word
+        }
       }
+      if (score < need) continue;
+      const eff = score - Math.min(1.5, Math.abs(last - tr.pos) / 800);
+      if (!best || eff > best.eff) best = { eff, score, last };
     }
-    if (score < need) continue;
-    const eff = score - Math.min(1.5, Math.abs(last - tr.pos) / 800);
-    if (!best || eff > best.eff) best = { eff, score, last };
+    return best;
+  };
+  // a probe must carry real evidence — pure stopword runs ("you the a…")
+  // would "relocate" to garbage. The loose fast path demands two content
+  // words; the strict long scan (5+ in-order hits) is trustworthy with one,
+  // which matters for legit stopword-heavy lines ("watch what you just did").
+  const content = (p) => p.filter((w) => !STOPWORDS.has(w)).length;
+  // fast path: the freshest 5 tokens with 4 in-order hits re-locks ~2 words
+  // sooner than the full probe; fall back to the stricter 8-token scan
+  let best = null;
+  const r5 = tr.missBuf.slice(-5);
+  if (r5.length === 5 && content(r5) >= 2) best = attempt(r5, 4);
+  if (!best) {
+    const r8 = tr.missBuf.slice(-8);
+    if (content(r8) >= 1)
+      best = attempt(r8, Math.max(5, Math.ceil(r8.length * 0.65)));
   }
   if (!best) return false;
   if (apply) jumpDisplayTo(best.last);
   tr.pos = best.last + 1;
   tr.missStreak = 0;
+  tr.missBuf = [];
+  tr.back = null;
   tr.lastAdvance = performance.now();
   return true;
 }
@@ -380,7 +438,7 @@ function geminiTokens(tokens) {
   }
   jumpDisplayTo(Math.max(0, shadow.pos - 1));
   T.pos = shadow.pos;
-  T.recent = shadow.recent.slice();
+  T.missBuf = shadow.missBuf.slice();
   T.missStreak = 0;
   T.lastAdvance = performance.now();
   diverge = 0;
@@ -881,9 +939,11 @@ function tick(now) {
     const diff = targetScroll - stage.scrollTop;
     if (Math.abs(diff) > 0.6) {
       // ease toward target, capped so it glides like a prompter (px/sec based,
-      // so behavior is identical on 60Hz and 120Hz displays)
+      // so behavior is identical on 60Hz and 120Hz displays). Big jumps get a
+      // faster cap so relocating across sections doesn't crawl.
+      const maxV = Math.abs(diff) > 1800 ? 3600 : 900;
       const step =
-        Math.sign(diff) * Math.min(Math.abs(diff) * 4.5 * dt, 900 * dt);
+        Math.sign(diff) * Math.min(Math.abs(diff) * 4.5 * dt, maxV * dt);
       stage.scrollTop += step;
     }
   } else if (mode === "auto" && autoRunning) {
@@ -1036,7 +1096,7 @@ function jumpParagraph(dir) {
   currentEl = null;
   setCurrent(wi);
   T.pos = wi + 1;
-  T.recent = [];
+  T.missBuf = [];
   T.missStreak = 0;
   syncShadow();
   followCurrent();
