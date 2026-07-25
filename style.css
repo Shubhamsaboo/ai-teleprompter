@@ -316,7 +316,19 @@ input[type="range"]::-webkit-slider-thumb {
   -webkit-text-fill-color: transparent;
 }
 .w-sub { font-size: 14px; color: rgba(238, 242, 248, 0.7); }
-.w-actions { display: flex; gap: 12px; justify-content: center; margin: 6px 0; }
+.w-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 6px 0; }
+.w-ai {
+  font-size: 12px; line-height: 1.6; color: rgba(238, 242, 248, 0.65);
+  background: rgba(124, 196, 255, 0.06);
+  border: 1px solid rgba(124, 196, 255, 0.18);
+  border-radius: 12px;
+  padding: 10px 14px;
+}
+.w-ai b { color: var(--accent); }
+.w-ai code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px; color: rgba(238, 242, 248, 0.85);
+}
 .w-actions .mic-btn { font-size: 14px; }
 .w-sample { height: auto; padding: 10px 16px; font-size: 13px; font-weight: 600; }
 .w-format {

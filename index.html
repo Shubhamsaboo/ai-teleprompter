@@ -7,7 +7,7 @@
 <meta name="description" content="A voice-following teleprompter. It listens through your mic and scrolls your Markdown script as you speak." />
 <meta name="theme-color" content="#0a0d14" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎤</text></svg>" />
-<link rel="stylesheet" href="style.css?v=6" />
+<link rel="stylesheet" href="style.css?v=7" />
 </head>
 <body>
   <!-- ambient background -->
@@ -120,7 +120,11 @@
       <button class="mic-btn" id="w-browse">Open a script…</button>
       <button class="icon-btn w-sample" id="w-sample">Try the sample</button>
       <button class="icon-btn w-sample" id="w-template">Download template</button>
+      <button class="icon-btn w-sample" id="w-prompt">✨ Copy AI prompt</button>
     </div>
+    <p class="w-ai">Fastest way to a script: <b>Copy AI prompt</b>, paste it into any
+    AI agent — Claude Code, Codex, Antigravity, ChatGPT — with your draft or notes,
+    and it returns a ready-to-load <code>.md</code> teleprompter script.</p>
     <div class="w-format">
       <div class="w-format-title">Script format — plain Markdown</div>
       <pre># SECTION NAME     section banner (not spoken)
@@ -136,6 +140,6 @@ Plain lines        spoken text — one thought per line reads best
 
   <div class="hint" id="hint">Space — listen · ↑↓ — jump paragraph · F — fullscreen · M — mirror · R — restart</div>
 
-  <script src="app.js?v=10"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>

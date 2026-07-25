@@ -1206,6 +1206,30 @@ Skip a line, ad-lib, or jump back to re-read — the tracker follows you.
 **[END]**
 `;
 
+// paste-anywhere prompt: teaches any AI agent (Claude Code, Codex, ChatGPT…)
+// to produce a script this app parses perfectly
+const AI_PROMPT = `Turn my draft (notes, outline, or topic) below into a teleprompter script in this exact Markdown format.
+
+FORMAT RULES
+- One spoken thought per line, with a blank line between thoughts. Keep lines short — under ~12 words reads best on a prompter.
+- Write for the ear, not the eye: contractions, plain words, natural rhythm. It must sound like a person talking, not an essay.
+- "# ░░ SECTION NAME ░░" — section banners that organize the script. Not spoken.
+- "## Heading" — spoken subheadings (the presenter reads these aloud).
+- "**word**" — bold 1–2 words per line at most, only the ones to punch with emphasis.
+- Pacing cues on their own line, never spoken: [PAUSE], [LONG PAUSE], [SLOW], [LEAN IN]
+- A cue at the start of a line applies to that line: "[SLOW] Read this one slowly."
+- "[SCREEN: what appears on screen]" — visual/b-roll cues for the edit. Not spoken.
+- "**~2 min**" — bold-only timing estimate under each section banner.
+- "---" on its own line between beats and sections.
+- Write numbers as digits (40, 4.5, 25) — the prompter matches them when spoken.
+- Start with "# TITLE — TELEPROMPTER SCRIPT" and end with "**[END]**".
+
+OUTPUT
+Return ONLY the finished script as one Markdown code block, no commentary before or after. If you can write files, also save it as a .md file.
+
+MY DRAFT:
+[paste your draft, notes, or topic here]`;
+
 function loadScript(md, name) {
   if (listening) stopListening(); // fresh script, fresh session
   parseScript(md, name);
@@ -1258,6 +1282,25 @@ document.getElementById("w-template").addEventListener("click", () => {
   a.click();
   URL.revokeObjectURL(a.href);
 });
+const promptBtn = document.getElementById("w-prompt");
+promptBtn.addEventListener("click", async () => {
+  let ok = false;
+  try {
+    await navigator.clipboard.writeText(AI_PROMPT);
+    ok = true;
+  } catch (_) {
+    // clipboard API blocked — fall back to a hidden textarea
+    const ta = document.createElement("textarea");
+    ta.value = AI_PROMPT;
+    document.body.appendChild(ta);
+    ta.select();
+    try { ok = document.execCommand("copy"); } catch (_) {}
+    ta.remove();
+  }
+  promptBtn.textContent = ok ? "✓ Copied — paste into your AI" : "Copy failed — see README";
+  setTimeout(() => (promptBtn.textContent = "✨ Copy AI prompt"), 2200);
+});
+
 document.getElementById("w-clear").addEventListener("click", () => {
   localStorage.removeItem("tp-script");
   parseScript("", "");
