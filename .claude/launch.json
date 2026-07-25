@@ -3,9 +3,10 @@
   "configurations": [
     {
       "name": "teleprompter",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8400", "--bind", "127.0.0.1"],
-      "port": 8400
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "exec python3 -m http.server \"${PORT:-8400}\" --bind 127.0.0.1"],
+      "port": 8400,
+      "autoPort": true
     }
   ]
 }

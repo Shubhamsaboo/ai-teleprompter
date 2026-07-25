@@ -88,12 +88,25 @@ function normalizeTokens(raws) {
     } else if (b === "point" && isNum(a) && isNum(c)) {
       res.push(a + c);
       i += 2;
+    } else if (a === res[res.length - 1]) {
+      // recognizer stutter / interim re-emission — drop consecutive dupes so
+      // they can't each match the next occurrence and race ahead
     } else {
       res.push(a);
     }
   }
   return res;
 }
+
+// Words too common to be evidence of position on their own. In a script full
+// of parallel lines ("You open… You write… You read…") letting these match
+// deep into the lookahead is what causes line-skipping.
+const STOPWORDS = new Set(
+  ("a an the it its is are was be been to of and or so in on at as for with " +
+   "that this these those you your we our i me my they them their he she do " +
+   "does did not no but if then than there here what when how who will can " +
+   "just very").split(" ")
+);
 
 // Split a text run into word spans (matchable) preserving punctuation/spacing.
 function wordify(text, container) {
@@ -254,13 +267,32 @@ function jumpDisplayTo(idx) {
 function matchCore(tr, rawTokens, apply) {
   const tokens = normalizeTokens(rawTokens);
   let advanced = false;
-  for (const norm of tokens) {
+  for (let t = 0; t < tokens.length; t++) {
+    const norm = tokens[t];
     tr.recent.push(norm);
     if (tr.recent.length > 10) tr.recent.shift();
-    const end = Math.min(tr.pos + LOOKAHEAD, words.length);
+    // Evidence-weighted window: stopwords only match the immediate next few
+    // words; content words start narrow and the window widens only while
+    // genuine misses accumulate (speaker actually skipped something).
+    const win = STOPWORDS.has(norm)
+      ? 3
+      : Math.min(4 + tr.missStreak * 3, LOOKAHEAD);
+    const end = Math.min(tr.pos + win, words.length);
     let hit = -1;
     for (let i = tr.pos; i < end; i++) {
       if (close(norm, words[i].norm)) { hit = i; break; }
+    }
+    // a jump deep into the window needs corroboration: the next spoken token
+    // must match just after the landing spot, else treat as a miss
+    if (hit - tr.pos > 8) {
+      const nxt = tokens[t + 1];
+      let ok = false;
+      if (nxt) {
+        const jEnd = Math.min(hit + 4, words.length);
+        for (let j = hit + 1; j < jEnd; j++)
+          if (close(nxt, words[j].norm)) { ok = true; break; }
+      }
+      if (!ok) hit = -1;
     }
     if (hit >= 0) {
       if (apply) applyAdvance(tr.pos, hit);
