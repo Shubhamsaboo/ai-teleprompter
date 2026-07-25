@@ -148,6 +148,7 @@ function parseScript(md, name) {
   shadow = null;
   scriptEl.innerHTML = "";
   let title = name || "Script";
+  let sawTitle = false;
 
   const lines = md.split("\n");
   for (const raw of lines) {
@@ -157,7 +158,13 @@ function parseScript(md, name) {
     // top-level heading: section banner (not spoken)
     if (/^#\s/.test(line)) {
       const t = line.replace(/^#\s*/, "").replace(/░/g, "").trim();
-      if (!scriptEl.children.length) { title = t; continue; } // doc title → topbar
+      // only the very first # line is the doc title — consecutive banners
+      // after it (e.g. "# COLD OPEN" right below the title) stay on stage
+      if (!sawTitle && !scriptEl.children.length) {
+        sawTitle = true;
+        title = t;
+        continue;
+      }
       const h = document.createElement("div");
       h.className = "sec-title";
       h.textContent = t;
@@ -1388,16 +1395,17 @@ if (!getSR()) {
     "Use <b>Chrome</b> or <b>Safari</b> (Auto and Manual modes still work).";
 }
 
-// boot: last-loaded script → local script.md (dev convenience) → welcome card
+// boot: a script.md placed next to index.html always wins (deliberate local
+// setup) → otherwise the browser-saved script (deployed) → welcome card
 (function boot() {
-  try {
-    const saved = JSON.parse(localStorage.getItem("tp-script") || "null");
-    if (saved && saved.md) { parseScript(saved.md, saved.name); return; }
-  } catch (_) {}
   fetch("script.md")
     .then((r) => (r.ok ? r.text() : Promise.reject()))
     .then((md) => parseScript(md, "Script"))
     .catch(() => {
+      try {
+        const saved = JSON.parse(localStorage.getItem("tp-script") || "null");
+        if (saved && saved.md) { parseScript(saved.md, saved.name); return; }
+      } catch (_) {}
       subEl.textContent = "no script loaded";
       showPanel();
     });

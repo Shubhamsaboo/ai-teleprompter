@@ -130,5 +130,5 @@ is sent only to Google's API endpoint. Get one at
 
 - `index.html` / `style.css` / `app.js` — the whole app, no build step
 - `start.sh` — local server + browser launcher
-- Drop a `script.md` next to `index.html` to have it auto-load on boot
+- Drop a `script.md` next to `index.html` to have it auto-load on boot (it takes precedence over the browser-saved script)
   (it's gitignored — handy for keeping a private script in a local clone)
